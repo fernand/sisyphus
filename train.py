@@ -39,7 +39,7 @@ class ActorCritic(nn.Module):
         self.logstd_head = nn.Parameter(torch.zeros(act_dim))
         self.v_head = nn.Linear(h2, 1)
         self.shared_params: list[nn.Parameter] = list(self.shared.parameters())
-        self.actor_params:  list[nn.Parameter] = self.shared_params + list(self.mu_head.parameters()) + [self.logstd_head]
+        self.actor_params:  list[nn.Parameter] = list(self.mu_head.parameters()) + [self.logstd_head]
         self.critic_params: list[nn.Parameter] = self.shared_params + list(self.v_head.parameters())
 
     def forward(self, x: torch.Tensor):
@@ -144,9 +144,9 @@ def train():
 
         if ep % 50 == 0:
             for param_group in actor_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.95, 1e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
             for param_group in critic_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.95, 3e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.98, 3e-5)
 
         with torch.no_grad():
             if len(recent_returns) >= 10:

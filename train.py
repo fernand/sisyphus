@@ -99,8 +99,7 @@ def train():
 
     recent_returns = []
     _, high = env.observation_space.low, env.observation_space.high
-    high = torch.from_numpy(high).to(DEVICE) # shape (24,)
-    scale = torch.where(high == 0, torch.ones_like(high), high)
+    scale = torch.from_numpy(high).to(DEVICE) # shape (24,)
 
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset()

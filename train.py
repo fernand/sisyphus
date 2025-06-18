@@ -38,7 +38,7 @@ class ActorCritic(nn.Module):
         self.logstd_head = nn.Parameter(torch.zeros(act_dim))
         self.v_head      = nn.Linear(h2, 1)
         self.shared_params: list[nn.Parameter] = list(self.shared.parameters())
-        self.actor_params:  list[nn.Parameter] = list(self.mu_head.parameters()) + [self.logstd_head]
+        self.actor_params:  list[nn.Parameter] = list(self.shared.parameters()) + list(self.mu_head.parameters()) + [self.logstd_head]
         self.critic_params: list[nn.Parameter] = self.shared_params + list(self.v_head.parameters())
 
     def forward(self, x: torch.Tensor):
@@ -89,8 +89,8 @@ def train():
         ep_ret = 0.0
         steps_survived = 0
 
-        # Exploration decay: start at 1.0, decay to 0.1 over MAX_STEPS
-        std_scale = max(0.1, 1.0 - ep / MAX_STEPS)
+        # Exploration decay: start at 1.0, decay to 0.1 over MAX_EPISODES
+        std_scale = max(0.1, 1.0 - ep / MAX_EPISODES)
         with torch.no_grad():
             net.logstd_head.data.fill_(np.log(std_scale))
 

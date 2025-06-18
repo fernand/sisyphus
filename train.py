@@ -33,7 +33,6 @@ class ActorCritic(nn.Module):
         super().__init__()
         h1, h2 = HIDDEN_SIZES
 
-        # Actor network
         self.actor = nn.Sequential(
             nn.Linear(obs_dim, h1, bias=None), nn.ReLU(inplace=True),
             nn.Linear(h1, h2, bias=None), nn.ReLU(inplace=True),
@@ -41,7 +40,6 @@ class ActorCritic(nn.Module):
         self.mu_head = nn.Linear(h2, act_dim, bias=None)
         self.logstd_head = nn.Parameter(torch.zeros(act_dim) - 0.5)
 
-        # Critic network
         self.critic = nn.Sequential(
             nn.Linear(obs_dim, h1, bias=None), nn.ReLU(inplace=True),
             nn.Linear(h1, h2, bias=None), nn.ReLU(inplace=True),

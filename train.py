@@ -127,7 +127,6 @@ def train():
 
             obs_next_t = torch.as_tensor(obs_next, dtype=torch.float32, device=DEVICE) / scale
 
-            # Compute values and advantage
             mu, std, v = net(obs_t)
             with torch.no_grad():
                 _, _, v_next = net(obs_next_t)

@@ -152,6 +152,7 @@ def train():
 
     obs_norm = RunningNorm(obs_dim)
     reward_stats = RunningStats()
+    recent_returns = []
 
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset()
@@ -165,7 +166,12 @@ def train():
                 param_group['lr'] *= 0.99
 
         with torch.no_grad():
-            net.logstd_head.data.mul_(0.999) # exponential decay
+            if len(recent_returns) >= 10:
+                avg_return = np.mean(recent_returns)
+                if avg_return > -50: # Doing well
+                    net.logstd_head.data.mul_(0.995)
+                else: # Struggling
+                    net.logstd_head.data.mul_(1.002)
             net.logstd_head.data.clamp_(np.log(0.02), np.log(3.5))
 
         for z in actor_tr + critic_tr:
@@ -230,6 +236,11 @@ def train():
             if done:
                 break
             obs = obs_next
+
+        recent_returns.append(ep_ret)
+        if len(recent_returns) > 10:
+            recent_returns.pop(0)
+
 
         if ep % 10 == 0:
             print(f'Episode {ep:4d} | Return {ep_ret:7.1f} | Steps {steps_survived:4d} | σ {net.logstd_head.exp().mean():.3f} | LR {actor_opt.param_groups[0]['lr']:.4f}')

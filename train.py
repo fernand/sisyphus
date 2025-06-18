@@ -1,5 +1,6 @@
 import argparse
 import gymnasium as gym
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions import Normal
@@ -30,8 +31,8 @@ class ActorCritic(nn.Module):
         self.v_head      = nn.Linear(h2, 1)
 
         # Separate parameters for actor and critic
-        self.actor_params = list(self.shared.parameters()) + list(self.mu_head.parameters()) + [self.logstd_head]
-        self.critic_params = list(self.shared.parameters()) + list(self.v_head.parameters())
+        self.actor_params = list(self.mu_head.parameters()) + [self.logstd_head]
+        self.critic_params = list(self.v_head.parameters())
     def forward(self, x):
         feat = self.shared(x)
         mu, v = self.mu_head(feat), self.v_head(feat).squeeze(-1)
@@ -52,10 +53,11 @@ def train():
     env = gym.make(ENV_ID, render_mode=render_mode)
     obs_dim, act_dim = env.observation_space.shape[0], env.action_space.shape[0]
     net = ActorCritic(obs_dim, act_dim)
-    actor_opt = torch.optim.Adam(net.actor_params, ACTOR_LR)
-    critic_opt = torch.optim.Adam(net.critic_params, CRITIC_LR)
-    actor_tr = [torch.zeros_like(p) for p in net.actor_params]
-    critic_tr = [torch.zeros_like(p) for p in net.critic_params]
+    # Use all parameters for both optimizers to handle shared layers
+    actor_opt = torch.optim.Adam(net.parameters(), ACTOR_LR)
+    critic_opt = torch.optim.Adam(net.parameters(), CRITIC_LR)
+    actor_tr = [torch.zeros_like(p) for p in net.parameters()]
+    critic_tr = [torch.zeros_like(p) for p in net.parameters()]
 
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset(seed=None)
@@ -67,6 +69,7 @@ def train():
                 env.render()
 
             act, v = net.act(obs)
+            act = np.clip(act, env.action_space.low, env.action_space.high)
             obs_next, r, term, trunc, _ = env.step(act)
             done = term or trunc
             with torch.no_grad():
@@ -78,14 +81,18 @@ def train():
             critic_opt.zero_grad()
             obs_t = torch.as_tensor(obs, dtype=torch.float32)
             _, _, v_pred = net(obs_t)
-            critic_loss = v_pred  # Placeholder for gradient computation
+            # Compute TD target
+            with torch.no_grad():
+                target = r + GAMMA * (0.0 if done else v_next)
+            critic_loss = 0.5 * (v_pred - target)**2
             critic_loss.backward(retain_graph=True)
 
             # Update eligibility traces and accumulate gradients
             with torch.no_grad():
-                for p, z in zip(net.critic_params, critic_tr):
+                for p, z in zip(net.parameters(), critic_tr):
                     z[:] = update(z, p.grad, GAMMA, LAMBDA)
                     p.grad = δ * z
+            torch.nn.utils.clip_grad_norm_(net.parameters(), 0.5)
             critic_opt.step()
 
             # actor
@@ -98,9 +105,10 @@ def train():
 
             # Update eligibility traces and accumulate gradients
             with torch.no_grad():
-                for p, z in zip(net.actor_params, actor_tr):
+                for p, z in zip(net.parameters(), actor_tr):
                     z[:] = update(z, p.grad, GAMMA, LAMBDA)
                     p.grad = δ * z
+            torch.nn.utils.clip_grad_norm_(net.parameters(), 0.5)
             actor_opt.step()
 
             ep_ret += r

@@ -38,7 +38,7 @@ class ActorCritic(nn.Module):
         self.logstd_head = nn.Parameter(torch.zeros(act_dim))
         self.v_head      = nn.Linear(h2, 1)
         self.shared_params: list[nn.Parameter] = list(self.shared.parameters())
-        self.actor_params:  list[nn.Parameter] = list(self.shared.parameters()) + list(self.mu_head.parameters()) + [self.logstd_head]
+        self.actor_params:  list[nn.Parameter] = self.shared_params + list(self.mu_head.parameters()) + [self.logstd_head]
         self.critic_params: list[nn.Parameter] = self.shared_params + list(self.v_head.parameters())
 
     def forward(self, x: torch.Tensor):

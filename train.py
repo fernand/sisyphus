@@ -35,18 +35,18 @@ class ActorCritic(nn.Module):
             nn.Linear(obs_dim, h1), nn.Tanh(),
             nn.Linear(h1, h2), nn.Tanh(),
         )
-        self.mu_head     = nn.Linear(h2, act_dim)
+        self.mu_head = nn.Linear(h2, act_dim)
         self.logstd_head = nn.Parameter(torch.zeros(act_dim))
-        self.v_head      = nn.Linear(h2, 1)
+        self.v_head = nn.Linear(h2, 1)
         self.shared_params: list[nn.Parameter] = list(self.shared.parameters())
-        self.actor_params:  list[nn.Parameter] = list(self.mu_head.parameters()) + [self.logstd_head]
+        self.actor_params:  list[nn.Parameter] = self.shared_params + list(self.mu_head.parameters()) + [self.logstd_head]
         self.critic_params: list[nn.Parameter] = self.shared_params + list(self.v_head.parameters())
 
     def forward(self, x: torch.Tensor):
         feat = self.shared(x)
-        mu   = self.mu_head(feat)
-        std  = self.logstd_head.exp()
-        v    = self.v_head(feat).squeeze(-1)
+        mu = self.mu_head(feat)
+        std = self.logstd_head.exp()
+        v = self.v_head(feat).squeeze(-1)
         return mu, std, v
 
     @torch.no_grad()

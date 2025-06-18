@@ -31,8 +31,8 @@ class ActorCritic(nn.Module):
         self.v_head      = nn.Linear(h2, 1)
 
         # Separate parameters for actor and critic
-        self.actor_params = list(self.mu_head.parameters()) + [self.logstd_head]
-        self.critic_params = list(self.v_head.parameters())
+        self.actor_params = list(self.shared.parameters()) + list(self.mu_head.parameters()) + [self.logstd_head]
+        self.critic_params = list(self.shared.parameters()) + list(self.v_head.parameters())
     def forward(self, x):
         feat = self.shared(x)
         mu, v = self.mu_head(feat), self.v_head(feat).squeeze(-1)
@@ -53,16 +53,17 @@ def train():
     env = gym.make(ENV_ID, render_mode=render_mode)
     obs_dim, act_dim = env.observation_space.shape[0], env.action_space.shape[0]
     net = ActorCritic(obs_dim, act_dim)
-    # Use all parameters for both optimizers to handle shared layers
-    actor_opt = torch.optim.Adam(net.parameters(), ACTOR_LR)
-    critic_opt = torch.optim.Adam(net.parameters(), CRITIC_LR)
-    actor_tr = [torch.zeros_like(p) for p in net.parameters()]
-    critic_tr = [torch.zeros_like(p) for p in net.parameters()]
+    # Separate optimizers for actor and critic parameters
+    actor_opt = torch.optim.Adam(net.actor_params, ACTOR_LR)
+    critic_opt = torch.optim.Adam(net.critic_params, CRITIC_LR)
+    actor_tr = [torch.zeros_like(p) for p in net.actor_params]
+    critic_tr = [torch.zeros_like(p) for p in net.critic_params]
 
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset(seed=None)
         ep_ret = 0.0
-        actor_tr[:] = [t.zero_() for t in actor_tr]; critic_tr[:] = [t.zero_() for t in critic_tr]
+        for t in actor_tr: t.zero_()
+        for t in critic_tr: t.zero_()
 
         for t in range(MAX_STEPS):
             if args.render and (t % args.render_every == 0):
@@ -72,28 +73,31 @@ def train():
             act = np.clip(act, env.action_space.low, env.action_space.high)
             obs_next, r, term, trunc, _ = env.step(act)
             done = term or trunc
+            # Compute target value
             with torch.no_grad():
                 obs_next_t = torch.as_tensor(obs_next, dtype=torch.float32)
                 _, _, v_next = net(obs_next_t)
-                δ = r + GAMMA * (0.0 if done else v_next) - v  # TD-error
+                target = r + GAMMA * (0.0 if done else v_next)
+                δ = target - v  # TD-error for actor
 
-            # critic - use standard TD error for gradient
+            # critic update
             critic_opt.zero_grad()
             obs_t = torch.as_tensor(obs, dtype=torch.float32)
             _, _, v_pred = net(obs_t)
-            critic_loss = 0.5 * (v_pred - (r + GAMMA * (0.0 if done else v_next)))**2
-            critic_loss.backward(retain_graph=True)
+            critic_loss = 0.5 * (v_pred - target)**2
+            critic_loss.backward()
 
-            # Update eligibility traces and scale gradients by TD error
+            # Update critic eligibility traces
             with torch.no_grad():
-                for p, z in zip(net.parameters(), critic_tr):
+                for p, z in zip(net.critic_params, critic_tr):
                     if p.grad is not None:
-                        z[:] = update(z, p.grad, GAMMA, LAMBDA)
+                        orig_grad = p.grad.clone()
+                        z[:] = update(z, orig_grad, GAMMA, LAMBDA)
                         p.grad = z.clone()
-            torch.nn.utils.clip_grad_norm_(net.parameters(), 0.5)
+            torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
             critic_opt.step()
 
-            # actor
+            # actor update
             actor_opt.zero_grad()
             mu, std, _ = net(obs_t)  # reuse obs_t from critic
             dist = Normal(mu, std)
@@ -101,13 +105,14 @@ def train():
             logp = dist.log_prob(act_t).sum()
             logp.backward()
 
-            # Update eligibility traces and scale by TD error
+            # Update actor eligibility traces and scale by TD error
             with torch.no_grad():
-                for p, z in zip(net.parameters(), actor_tr):
+                for p, z in zip(net.actor_params, actor_tr):
                     if p.grad is not None:
-                        z[:] = update(z, p.grad, GAMMA, LAMBDA)
-                        p.grad = δ * z
-            torch.nn.utils.clip_grad_norm_(net.parameters(), 0.5)
+                        orig_grad = p.grad.clone()
+                        z[:] = update(z, orig_grad, GAMMA, LAMBDA)
+                        p.grad = δ.item() * z  # Use δ.item() to get scalar value
+            torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
             actor_opt.step()
 
             ep_ret += r

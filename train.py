@@ -218,7 +218,6 @@ def train():
         if len(recent_returns) > 10:
             recent_returns.pop(0)
 
-
         if ep % 10 == 0:
             print(f'Episode {ep:4d} | Return {ep_ret:7.1f} | Steps {steps_survived:4d} | σ {net.logstd_head.exp().mean():.3f} | LR {critic_opt.param_groups[0]['lr']:.5f}')
 

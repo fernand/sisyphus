@@ -198,14 +198,13 @@ def train():
             delta  = target - v_pred_t.detach()  # advantage, no grad
 
             # 1 Actor update (before critic)
+            actor_opt.zero_grad()
             mu, std, _ = net(obs_t)
             dist = TanhNormal(mu, std)
             act_t = torch.as_tensor(act, dtype=torch.float32, device=DEVICE)
             logp = dist.log_prob(act_t).sum()
             entropy = dist.normal.entropy().sum()
-            actor_opt.zero_grad()
             action_penalty = 0.001 * (act_t ** 2).sum()
-            actor_opt.zero_grad()
             (-logp - ENTROPY_COEF * entropy + action_penalty).backward()
             apply_traces(net.actor_params, actor_tr, scale=delta.detach())
             torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)

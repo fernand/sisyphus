@@ -19,7 +19,7 @@ GAMMA       = 0.99
 LAMBDA      = 0.9
 ENTROPY_COEF = 0.02
 ACTOR_LR    = 1e-4
-CRITIC_LR   = 3e-4
+CRITIC_LR   = 2e-4
 MAX_EPISODES = 5000
 MAX_STEPS    = 1600
 HIDDEN_SIZES = (128, 64)
@@ -144,9 +144,9 @@ def train():
 
         if ep % 50 == 0:
             for param_group in actor_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.99, 1e-5)
             for param_group in critic_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.98, 3e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.99, 3e-5)
 
         with torch.no_grad():
             if len(recent_returns) >= 10:

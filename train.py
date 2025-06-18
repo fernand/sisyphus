@@ -131,7 +131,8 @@ def train():
             mu, std, v = net(obs_t)
             with torch.no_grad():
                 _, _, v_next = net(obs_next_t)
-                delta = (r + GAMMA * (1.0 - float(done)) * v_next) - v
+            v_next = v_next.detach()
+            delta = (r + GAMMA * (1.0 - float(done)) * v_next) - v
 
             critic_opt.zero_grad()
             critic_loss = 0.5 * delta.pow(2).mean()

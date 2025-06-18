@@ -170,7 +170,7 @@ def train():
             done = term or trunc
 
             # Cast scalars to tensors early
-            r_t = torch.as_tensor(r_normalized, dtype=torch.float32, device=DEVICE)
+            r_t = torch.as_tensor(r, dtype=torch.float32, device=DEVICE)
             obs_t      = torch.as_tensor(obs , dtype=torch.float32, device=DEVICE)
             obs_norm.update(obs_t.unsqueeze(0))
             obs_t      = obs_norm(obs_t)

@@ -6,11 +6,9 @@ import torch.nn as nn
 from torch.distributions import Normal
 from tqdm import trange
 
-# Threading hints (tweak for your CPU)
 torch.set_num_threads(8)
 torch.set_num_interop_threads(8)
 
-# ──────────────────── Hyper‑parameters ────────────────────
 parser = argparse.ArgumentParser()
 parser.add_argument('--render', action='store_true', help='turn on live viewer')
 parser.add_argument('--render_every', type=int, default=1, help='draw 1 in N steps')
@@ -24,10 +22,9 @@ CRITIC_LR   = 3e-4
 MAX_EPISODES = 2000
 MAX_STEPS    = 1600
 HIDDEN_SIZES = (128, 64)
-DEVICE       = torch.device('cpu')  # change to "cuda" for GPU
+DEVICE       = torch.device('cpu')
 
 
-# ───────────────────── Network definition ─────────────────────
 class ActorCritic(nn.Module):
     """Shared torso, Gaussian actor, scalar critic."""
 
@@ -101,14 +98,14 @@ def train():
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset()
         ep_ret = 0.0
-        for z in actor_tr + critic_tr:
-            z.zero_()
+        # for z in actor_tr + critic_tr:
+        #     z.zero_()
 
         for t in range(MAX_STEPS):
             if args.render and (t % args.render_every == 0):
                 env.render()
 
-            # ───── Interaction ─────
+            # Interaction
             act, _ = net.act(obs)
             act_clipped = np.clip(act, env.action_space.low, env.action_space.high)
             obs_next, r, term, trunc, _ = env.step(act_clipped)
@@ -122,26 +119,26 @@ def train():
             # Fresh value estimates
             with torch.no_grad():
                 _, _, v_next = net(obs_next_t)
-            _, _, v_pred_t = net(obs_t)   # current state value (used for both actor & critic)
+            _, _, v_pred_t = net(obs_t)  # current state value (used for both actor & critic)
 
             target = r_t + GAMMA * (0.0 if done else v_next)
             delta  = target - v_pred_t.detach()  # advantage, no grad
 
-            # ───── 1. Actor update (before critic) ─────
+            # 1. Actor update (before critic)
             actor_opt.zero_grad()
             mu, std, _ = net(obs_t)  # trunk unchanged so far
             dist = Normal(mu, std)
             logp = dist.log_prob(torch.from_numpy(act).to(obs_t)).sum()
-            logp.backward()                       # ∇ log π
+            logp.backward() # ∇ log π
             apply_traces(net.actor_params, actor_tr, scale=delta.item())  # uses current δ
             torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
             actor_opt.step()
 
-            # ───── 2. Critic update (after actor) ─────
+            # 2. Critic update (after actor)
             critic_opt.zero_grad()
             # re‑evaluate value because shared trunk is still unchanged (actor didn't touch it)
             _, _, v_pred_fresh = net(obs_t)
-            critic_loss = 0.5 * (v_pred_fresh - target.detach()) ** 2
+            critic_loss = 0.5 * (v_pred_fresh - target) ** 2
             critic_loss.backward()
             apply_traces(net.critic_params, critic_tr)
             torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)

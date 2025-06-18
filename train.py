@@ -18,7 +18,7 @@ ENV_ID      = 'BipedalWalker-v3'
 GAMMA       = 0.99
 LAMBDA      = 0.9
 ENTROPY_COEF = 1e-3
-ACTOR_LR    = 3e-4
+ACTOR_LR    = 1e-4
 CRITIC_LR   = 3e-4
 MAX_EPISODES = 5000
 MAX_STEPS    = 1600
@@ -188,10 +188,9 @@ def train():
 
             # 2 Critic update (after actor)
             critic_opt.zero_grad()
-            # re‑evaluate value because shared trunk is still unchanged (actor didn't touch it)
-            _, _, v_pred_fresh = net(obs_t)
-            critic_loss = 0.5 * (v_pred_fresh - target) ** 2
-            critic_loss.backward()
+            # Get value with current params (after actor update)
+            _, _, v_pred = net(obs_t)  # Use full forward pass for consistency
+            v_pred.backward()
             apply_traces(net.critic_params, critic_tr, scale=delta.detach())
             torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
             critic_opt.step()

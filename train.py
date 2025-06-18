@@ -16,7 +16,6 @@ args = parser.parse_args()
 
 ENV_ID = 'BipedalWalker-v3'
 GAMMA = 0.99
-LAMBDA = 0.9
 ENTROPY_COEF = 0.01
 ACTOR_LR = 1e-4
 CRITIC_LR = 3e-4
@@ -114,10 +113,6 @@ def train():
         with torch.no_grad():
             net.logstd_head.data.clamp_(np.log(0.3), np.log(2.0))
 
-        # Initialize eligibility traces
-        actor_traces = [torch.zeros_like(p) for p in net.actor_params]
-        critic_traces = [torch.zeros_like(p) for p in net.critic_params]
-
         for t in range(MAX_STEPS):
             if args.render and (t % args.render_every == 0):
                 env.render()
@@ -138,44 +133,20 @@ def train():
                 _, _, v_next = net(obs_next_t)
                 delta = (r + GAMMA * (1.0 - float(done)) * v_next) - v
 
-            # Update critic
             critic_opt.zero_grad()
-            v.backward()
-
-            # Apply eligibility traces for critic
-            with torch.no_grad():
-                for p, trace in zip(net.critic_params, critic_traces):
-                    if p.grad is not None:
-                        trace.mul_(GAMMA * LAMBDA).add_(p.grad)   # e^v_t
-                        p.grad.copy_(-delta * trace)              # −δ e  (SGD does θ ← θ − η ∇J)
-
-            torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
-            with torch.no_grad(): # Keep traces bounded
-                for p, trace in zip(net.critic_params, critic_traces):
-                    trace.copy_(p.grad)
+            critic_loss = 0.5 * delta.pow(2).mean()
+            critic_loss.backward()
+            # torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
             critic_opt.step()
 
-            # Update actor
             actor_opt.zero_grad()
             dist = make_dist(mu, std)
             act_t = torch.as_tensor(act, dtype=torch.float32, device=DEVICE)
             log_prob = dist.log_prob(torch.clamp(act_t, -0.999, 0.999)).sum()
             entropy = dist.base_dist.entropy().sum()
-
-            log_prob.backward(retain_graph=True)       # ∇ log π_t  → traces
-            (-ENTROPY_COEF * entropy).backward()       # −β ∇H      → p.grad (accumulates)
-
-            # Apply eligibility traces for actor
-            with torch.no_grad():
-                for p, trace in zip(net.actor_params, actor_traces):
-                    if p.grad is not None:
-                        trace.mul_(GAMMA * LAMBDA).add_(p.grad)   # e^π_t
-                        p.grad.copy_(-delta * trace)              # −δ e
-
-            torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
-            with torch.no_grad(): # keep traces bounded
-                for p, trace in zip(net.actor_params, actor_traces):
-                    trace.copy_(p.grad)
+            actor_loss = -log_prob * delta.detach() - ENTROPY_COEF * entropy
+            actor_loss.backward()
+            # torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
             actor_opt.step()
 
             ep_ret += r

@@ -137,7 +137,7 @@ def train():
             critic_opt.zero_grad()
             critic_loss = 0.5 * delta.pow(2).mean()
             critic_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
+            torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
             critic_opt.step()
 
             actor_opt.zero_grad()
@@ -147,7 +147,7 @@ def train():
             entropy = dist.base_dist.entropy().sum()
             actor_loss = -log_prob * delta.detach() - ENTROPY_COEF * entropy
             actor_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
+            torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
             actor_opt.step()
 
             ep_ret += r

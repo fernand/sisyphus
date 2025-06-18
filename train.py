@@ -22,7 +22,7 @@ ACTOR_LR = 1e-4
 CRITIC_LR = 1e-4
 MAX_EPISODES = 5000
 MAX_STEPS = 1600
-HIDDEN_SIZES = (128, 64)
+HIDDEN_SIZES = (128, 128)
 DEVICE = torch.device('cpu')
 
 def make_dist(mu, std):
@@ -38,8 +38,8 @@ class ActorCritic(nn.Module):
 
         # Actor network
         self.actor = nn.Sequential(
-            nn.Linear(obs_dim, h1), nn.ReLU(),
-            nn.Linear(h1, h2), nn.ReLU(),
+            nn.Linear(obs_dim, h1), nn.ReLU(inplace=True),
+            nn.Linear(h1, h2), nn.ReLU(inplace=True),
         )
         self.mu_head = nn.Linear(h2, act_dim)
         self.logstd_head = nn.Parameter(torch.zeros(act_dim) - 0.5)

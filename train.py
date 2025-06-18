@@ -16,8 +16,8 @@ args = parser.parse_args()
 
 ENV_ID = 'BipedalWalker-v3'
 GAMMA = 0.99
-ENTROPY_COEF = 0.01
-ACTOR_LR = 1e-4
+ENTROPY_COEF = 0.001  # Reduced for more exploitation
+ACTOR_LR = 3e-4  # Increased for faster learning
 CRITIC_LR = 3e-4
 MAX_EPISODES = 5000
 MAX_STEPS = 1600
@@ -96,8 +96,9 @@ def train():
     critic_opt = torch.optim.Adam(net.critic_params, CRITIC_LR)
 
     recent_returns = []
-    _, high = env.observation_space.low, env.observation_space.high
-    scale = torch.from_numpy(high).to(DEVICE) # shape (24,)
+    low, high = env.observation_space.low, env.observation_space.high
+    obs_mean = torch.from_numpy((low + high) / 2).to(DEVICE)
+    obs_scale = torch.from_numpy((high - low) / 2).to(DEVICE)
 
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset()
@@ -110,22 +111,19 @@ def train():
             for param_group in critic_opt.param_groups:
                 param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
 
-        with torch.no_grad():
-            net.logstd_head.data.clamp_(np.log(0.3), np.log(2.0))
-
         for t in range(MAX_STEPS):
             if args.render and (t % args.render_every == 0):
                 env.render()
 
-            # Normalize observations
-            obs_t = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE) / scale
+            # Normalize observations to [-1, 1]
+            obs_t = (torch.as_tensor(obs, dtype=torch.float32, device=DEVICE) - obs_mean) / obs_scale
 
             # Action selection
             act, _ = net.act(obs_t)
             obs_next, r, term, trunc, _ = env.step(act.cpu().numpy())
             done = term or trunc
 
-            obs_next_t = torch.as_tensor(obs_next, dtype=torch.float32, device=DEVICE) / scale
+            obs_next_t = (torch.as_tensor(obs_next, dtype=torch.float32, device=DEVICE) - obs_mean) / obs_scale
 
             mu, std, v = net(obs_t)
             with torch.no_grad():

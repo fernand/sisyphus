@@ -16,8 +16,8 @@ args = parser.parse_args()
 
 ENV_ID = 'BipedalWalker-v3'
 GAMMA = 0.99
-ENTROPY_COEF = 0.001  # Reduced for more exploitation
-ACTOR_LR = 3e-4  # Increased for faster learning
+ENTROPY_COEF = 0.001
+ACTOR_LR = 3e-4
 CRITIC_LR = 3e-4
 MAX_EPISODES = 5000
 MAX_STEPS = 1600
@@ -29,37 +29,33 @@ def make_dist(mu, std):
     return TransformedDistribution(base, [TanhTransform(cache_size=1)])
 
 class ActorCritic(nn.Module):
-    """Actor-Critic with separate networks for stability."""
-
     def __init__(self, obs_dim: int, act_dim: int):
         super().__init__()
         h1, h2 = HIDDEN_SIZES
 
         # Actor network
         self.actor = nn.Sequential(
-            nn.Linear(obs_dim, h1), nn.ReLU(inplace=True),
-            nn.Linear(h1, h2), nn.ReLU(inplace=True),
+            nn.Linear(obs_dim, h1, bias=None), nn.ReLU(inplace=True),
+            nn.Linear(h1, h2, bias=None), nn.ReLU(inplace=True),
         )
-        self.mu_head = nn.Linear(h2, act_dim)
+        self.mu_head = nn.Linear(h2, act_dim, bias=None)
         self.logstd_head = nn.Parameter(torch.zeros(act_dim) - 0.5)
 
         # Critic network
         self.critic = nn.Sequential(
-            nn.Linear(obs_dim, h1), nn.ReLU(inplace=True),
-            nn.Linear(h1, h2), nn.ReLU(inplace=True),
-            nn.Linear(h2, 1)
+            nn.Linear(obs_dim, h1, bias=None), nn.ReLU(inplace=True),
+            nn.Linear(h1, h2, bias=None), nn.ReLU(inplace=True),
+            nn.Linear(h2, 1, bias=None)
         )
 
         self.actor_params = list(self.actor.parameters()) + list(self.mu_head.parameters()) + [self.logstd_head]
         self.critic_params = list(self.critic.parameters())
 
     def forward(self, x: torch.Tensor):
-        # Actor
         actor_feat = self.actor(x)
         mu = self.mu_head(actor_feat)
         std = self.logstd_head.exp()
 
-        # Critic
         v = self.critic(x).squeeze(-1)
 
         return mu, std, v
@@ -73,14 +69,10 @@ class ActorCritic(nn.Module):
 def init(net):
     for m in net.modules():
         if isinstance(m, nn.Linear):
-            gain = np.sqrt(2)
-            nn.init.orthogonal_(m.weight, gain)
-            nn.init.constant_(m.bias, 0.)
+            nn.init.orthogonal_(m.weight, np.sqrt(2))
     # Small output layers
     nn.init.orthogonal_(net.mu_head.weight, 0.01)
-    nn.init.constant_(net.mu_head.bias, 0.)
     nn.init.orthogonal_(net.critic[-1].weight, 1.0)
-    nn.init.constant_(net.critic[-1].bias, 0.)
 
 def train():
     render_mode = 'human' if args.render else None
@@ -134,7 +126,7 @@ def train():
             critic_opt.zero_grad()
             critic_loss = 0.5 * delta.pow(2).mean()
             critic_loss.backward()
-            torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
+            torch.nn.utils.clip_grad_norm_(net.critic_params, 1.0)
             critic_opt.step()
 
             actor_opt.zero_grad()
@@ -144,7 +136,7 @@ def train():
             entropy = dist.base_dist.entropy().sum()
             actor_loss = -log_prob * delta.detach() - ENTROPY_COEF * entropy
             actor_loss.backward()
-            torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
+            torch.nn.utils.clip_grad_norm_(net.actor_params, 1.0)
             actor_opt.step()
 
             ep_ret += r

@@ -1,4 +1,9 @@
+import torch
+torch.set_num_threads(4)
+torch.set_num_interop_threads(4)
+
 import argparse
+
 import gymnasium as gym
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.sac import SAC
@@ -25,6 +30,7 @@ model = SAC(
     gradient_steps=1,
     policy_kwargs=dict(net_arch=[256, 256]),
     verbose=0,
+    device='cpu',
 )
 
 class TqdmCallback(BaseCallback):

@@ -24,6 +24,11 @@ MAX_STEPS = 1600
 HIDDEN_SIZES = (256, 256)
 DEVICE = torch.device('cpu')
 
+# EWC hyperparameters
+EWC_LAMBDA = 400.0  # Strength of EWC penalty
+FISHER_SAMPLE_SIZE = 50  # Number of samples for Fisher Information Matrix estimation (reduced for faster consolidation)
+CONSOLIDATION_INTERVAL = 10  # Consolidate memory every N episodes
+
 def make_dist(mu, std):
     base = Normal(mu, std)
     return TransformedDistribution(base, [TanhTransform(cache_size=1)])
@@ -49,6 +54,12 @@ class ActorCritic(nn.Module):
         self.actor_params = list(self.actor.parameters()) + list(self.mu_head.parameters()) + [self.logstd_head]
         self.critic_params = list(self.critic.parameters())
 
+        # EWC attributes
+        self.fisher_actor = None
+        self.fisher_critic = None
+        self.optimal_actor_params = None
+        self.optimal_critic_params = None
+
     def forward(self, x: torch.Tensor):
         actor_feat = self.actor(x)
         mu = self.mu_head(actor_feat)
@@ -63,6 +74,81 @@ class ActorCritic(nn.Module):
         mu, std, v = self(obs)
         act = make_dist(mu, std).rsample()
         return act, v.item()
+
+    def consolidate_memory(self, env, obs_mean, obs_scale):
+        """Compute Fisher Information Matrix for EWC"""
+        self.fisher_actor = {}
+        self.fisher_critic = {}
+
+        # Store optimal parameters
+        self.optimal_actor_params = {n: p.data.clone() for n, p in self.named_parameters() if any(p is param for param in self.actor_params)}
+        self.optimal_critic_params = {n: p.data.clone() for n, p in self.named_parameters() if any(p is param for param in self.critic_params)}
+
+        # Initialize Fisher matrices
+        for n, p in self.named_parameters():
+            if any(p is param for param in self.actor_params):
+                self.fisher_actor[n] = torch.zeros_like(p.data)
+            elif any(p is param for param in self.critic_params):
+                self.fisher_critic[n] = torch.zeros_like(p.data)
+
+        # Collect samples for Fisher estimation
+        obs_samples = []
+        act_samples = []
+
+        for _ in range(FISHER_SAMPLE_SIZE):
+            obs, _ = env.reset()
+            done = False
+            steps = 0
+            while not done and steps < 100:  # Limit steps per sample
+                obs_t = (torch.as_tensor(obs, dtype=torch.float32, device=DEVICE) - obs_mean) / obs_scale
+                act, _ = self.act(obs_t)
+                obs_samples.append(obs_t)
+                act_samples.append(act)
+
+                obs_next, _, term, trunc, _ = env.step(act.cpu().numpy())
+                done = term or trunc
+                obs = obs_next
+                steps += 1
+
+        # Compute Fisher Information Matrix
+        for obs_t, act in zip(obs_samples, act_samples):
+            # Actor Fisher
+            self.zero_grad()
+            mu, std, _ = self(obs_t)
+            dist = make_dist(mu, std)
+            log_prob = dist.log_prob(torch.clamp(act, -0.999, 0.999)).sum()
+            log_prob.backward()
+
+            for n, p in self.named_parameters():
+                if n in self.fisher_actor and p.grad is not None:
+                    self.fisher_actor[n] += p.grad.data ** 2 / len(obs_samples)
+
+            # Critic Fisher
+            self.zero_grad()
+            _, _, v = self(obs_t)
+            v_loss = v ** 2  # Use squared value as proxy for importance
+            v_loss.backward()
+
+            for n, p in self.named_parameters():
+                if n in self.fisher_critic and p.grad is not None:
+                    self.fisher_critic[n] += p.grad.data ** 2 / len(obs_samples)
+
+    def ewc_loss(self, lambda_ewc=EWC_LAMBDA):
+        """Compute EWC penalty term"""
+        actor_loss = 0
+        critic_loss = 0
+
+        if self.fisher_actor is not None and self.optimal_actor_params is not None:
+            for n, p in self.named_parameters():
+                if n in self.fisher_actor:
+                    actor_loss += (self.fisher_actor[n] * (p - self.optimal_actor_params[n]) ** 2).sum()
+
+        if self.fisher_critic is not None and self.optimal_critic_params is not None:
+            for n, p in self.named_parameters():
+                if n in self.fisher_critic:
+                    critic_loss += (self.fisher_critic[n] * (p - self.optimal_critic_params[n]) ** 2).sum()
+
+        return 0.5 * lambda_ewc * actor_loss, 0.5 * lambda_ewc * critic_loss
 
 def init(net):
     for m in net.modules():
@@ -97,9 +183,9 @@ def train():
 
         if ep % 50 == 0 and ep > 0:
             for param_group in actor_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.95, 1e-5)
             for param_group in critic_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.95, 1e-5)
 
         for t in range(MAX_STEPS):
             if args.render and (t % args.render_every == 0):
@@ -122,7 +208,11 @@ def train():
 
             critic_opt.zero_grad()
             critic_loss = 0.5 * delta.pow(2).mean()
-            critic_loss.backward()
+
+            _, ewc_critic_penalty = net.ewc_loss()
+            total_critic_loss = critic_loss + ewc_critic_penalty
+
+            total_critic_loss.backward()
             torch.nn.utils.clip_grad_norm_(net.critic_params, 1.0)
             critic_opt.step()
 
@@ -132,7 +222,11 @@ def train():
             log_prob = dist.log_prob(torch.clamp(act_t, -0.999, 0.999)).sum()
             entropy = dist.base_dist.entropy().sum()
             actor_loss = -log_prob * delta.detach() - ENTROPY_COEF * entropy
-            actor_loss.backward()
+
+            ewc_actor_penalty, _ = net.ewc_loss()
+            total_actor_loss = actor_loss + ewc_actor_penalty
+
+            total_actor_loss.backward()
             torch.nn.utils.clip_grad_norm_(net.actor_params, 1.0)
             actor_opt.step()
 
@@ -146,6 +240,9 @@ def train():
         recent_returns.append(ep_ret)
         if len(recent_returns) > 100:
             recent_returns.pop(0)
+
+        if ep > 0 and ep % CONSOLIDATION_INTERVAL == 0:
+            net.consolidate_memory(env, obs_mean, obs_scale)
 
         if ep % 10 == 0:
             avg_ret = np.mean(recent_returns[-10:]) if len(recent_returns) >= 10 else ep_ret

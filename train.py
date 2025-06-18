@@ -14,16 +14,16 @@ parser.add_argument('--render', action='store_true', help='turn on live viewer')
 parser.add_argument('--render_every', type=int, default=1, help='draw 1 in N steps')
 args = parser.parse_args()
 
-ENV_ID      = 'BipedalWalker-v3'
-GAMMA       = 0.99
-LAMBDA      = 0.9
+ENV_ID = 'BipedalWalker-v3'
+GAMMA = 0.99
+LAMBDA  = 0.9
 ENTROPY_COEF = 0.02
-ACTOR_LR    = 1e-4
-CRITIC_LR   = 3e-4
+ACTOR_LR = 1e-4
+CRITIC_LR = 3e-4
 MAX_EPISODES = 5000
-MAX_STEPS    = 1600
+MAX_STEPS = 1600
 HIDDEN_SIZES = (128, 64)
-DEVICE       = torch.device('cpu')
+DEVICE = torch.device('cpu')
 
 class ActorCritic(nn.Module):
     """Shared torso, Gaussian actor, scalar critic."""
@@ -127,7 +127,7 @@ def train():
     net = ActorCritic(obs_dim, act_dim).to(DEVICE)
     init(net)
 
-    # Two optimisers, shared trunk only in critic optimiser
+    # Two optimiszrs, shared trunk only in critic optimiser
     actor_opt  = torch.optim.Adam(net.actor_params,  ACTOR_LR)
     critic_opt = torch.optim.Adam(net.critic_params, CRITIC_LR)
 
@@ -144,9 +144,9 @@ def train():
 
         if ep % 50 == 0:
             for param_group in actor_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.99, 1e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
             for param_group in critic_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.99, 3e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.98, 3e-5)
 
         with torch.no_grad():
             if len(recent_returns) >= 10:

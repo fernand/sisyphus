@@ -17,13 +17,12 @@ args = parser.parse_args()
 ENV_ID      = 'BipedalWalker-v3'
 GAMMA       = 0.99
 LAMBDA      = 0.95
-ACTOR_LR    = 3e-4
-CRITIC_LR   = 3e-4
+ACTOR_LR    = 1e-4
+CRITIC_LR   = 1e-4
 MAX_EPISODES = 2000
 MAX_STEPS    = 1600
 HIDDEN_SIZES = (128, 64)
 DEVICE       = torch.device('cpu')
-
 
 class ActorCritic(nn.Module):
     """Shared torso, Gaussian actor, scalar critic."""
@@ -35,12 +34,9 @@ class ActorCritic(nn.Module):
             nn.Linear(obs_dim, h1), nn.Tanh(),
             nn.Linear(h1, h2), nn.Tanh(),
         )
-
         self.mu_head     = nn.Linear(h2, act_dim)
         self.logstd_head = nn.Parameter(torch.zeros(act_dim))
         self.v_head      = nn.Linear(h2, 1)
-
-        # Parameter bookkeeping ────────────────────────────────
         self.shared_params: list[nn.Parameter] = list(self.shared.parameters())
         self.actor_params:  list[nn.Parameter] = list(self.mu_head.parameters()) + [self.logstd_head]
         self.critic_params: list[nn.Parameter] = self.shared_params + list(self.v_head.parameters())
@@ -59,13 +55,9 @@ class ActorCritic(nn.Module):
         act = Normal(mu, std).sample()
         return act.cpu().numpy(), v.item()
 
-
-# ───────────────────── Trace utilities ─────────────────────
-
 def decay_and_add(trace: torch.Tensor, grad: torch.Tensor):
     """Eligibility update: z ← γλ z + g_t"""
     trace.mul_(GAMMA * LAMBDA).add_(grad)
-
 
 def apply_traces(params, traces, scale: float = 1.0):
     """Scales grads by eligibility traces before the optimiser step."""
@@ -75,9 +67,6 @@ def apply_traces(params, traces, scale: float = 1.0):
                 continue
             decay_and_add(z, p.grad)
             p.grad.copy_(z).mul_(scale)
-
-
-# ───────────────────── Training loop ─────────────────────
 
 def train():
     render_mode = 'human' if args.render else None
@@ -153,7 +142,6 @@ def train():
             print(f'Episode {ep:4d} | Return {ep_ret:7.1f}')
 
     env.close()
-
 
 if __name__ == '__main__':
     train()

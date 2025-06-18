@@ -66,11 +66,10 @@ class ActorCritic(nn.Module):
         return mu, std, v
 
     @torch.no_grad()
-    def act(self, obs: np.ndarray):
-        obs_t = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE)
-        mu, std, v = self(obs_t)
+    def act(self, obs):
+        mu, std, v = self(obs)
         act = make_dist(mu, std).rsample()
-        return act.numpy(), v.item()
+        return act, v.item()
 
 def init(net):
     for m in net.modules():
@@ -129,8 +128,8 @@ def train():
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE) / scale
 
             # Action selection
-            act, _ = net.act(obs_t.numpy())
-            obs_next, r, term, trunc, _ = env.step(act)
+            act, _ = net.act(obs_t)
+            obs_next, r, term, trunc, _ = env.step(act.cpu().numpy())
             done = term or trunc
 
             obs_next_t = torch.as_tensor(obs_next, dtype=torch.float32, device=DEVICE) / scale

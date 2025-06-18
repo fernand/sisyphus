@@ -1,6 +1,6 @@
 import torch
-torch.set_num_threads(4)
-torch.set_num_interop_threads(4)
+torch.set_num_threads(8)
+torch.set_num_interop_threads(8)
 
 import argparse
 
@@ -33,7 +33,7 @@ model = SAC(
     device='cpu',
 )
 
-class TqdmCallback(BaseCallback):
+class Callback(BaseCallback):
     def _on_training_start(self):
         self.ep = 0
         self.recent = []
@@ -57,5 +57,5 @@ class TqdmCallback(BaseCallback):
         return True
 
 total_steps = args.episodes * MAX_STEPS
-model.learn(total_timesteps=total_steps, callback=TqdmCallback())
+model.learn(total_timesteps=total_steps, callback=Callback())
 env.close()

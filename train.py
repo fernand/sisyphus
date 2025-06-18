@@ -87,6 +87,13 @@ def train():
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset()
         ep_ret = 0.0
+        steps_survived = 0
+        
+        # Exploration decay: start at 1.0, decay to 0.1 over first 1000 episodes
+        std_scale = max(0.1, 1.0 - ep / 1000.0)
+        with torch.no_grad():
+            net.logstd_head.data.fill_(np.log(std_scale))
+        
         # for z in actor_tr + critic_tr:
         #     z.zero_()
 
@@ -134,12 +141,13 @@ def train():
             critic_opt.step()
 
             ep_ret += r
+            steps_survived += 1
             if done:
                 break
             obs = obs_next
 
         if ep % 10 == 0:
-            print(f'Episode {ep:4d} | Return {ep_ret:7.1f}')
+            print(f'Episode {ep:4d} | Return {ep_ret:7.1f} | Steps {steps_survived:4d} | Std {std_scale:.3f}')
 
     env.close()
 

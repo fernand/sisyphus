@@ -112,7 +112,6 @@ def train():
             for param_group in critic_opt.param_groups:
                 param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
 
-        # Adaptive exploration
         with torch.no_grad():
             net.logstd_head.data.clamp_(np.log(0.3), np.log(2.0))
 

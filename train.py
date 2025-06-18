@@ -144,9 +144,9 @@ def train():
 
         if ep % 50 == 0:
             for param_group in actor_opt.param_groups:
-                max(param_group['lr'] * 0.95, 1e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.95, 1e-5)
             for param_group in critic_opt.param_groups:
-                max(param_group['lr'] * 0.95, 3e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.95, 3e-5)
 
         with torch.no_grad():
             if len(recent_returns) >= 10:

@@ -6,13 +6,17 @@ from torch.distributions import Normal
 from tqdm import trange
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--render",        action="store_true", help="turn on live viewer")
-parser.add_argument("--render_every",  type=int, default=1, help="draw 1 in N steps")
+parser.add_argument('--render',        action='store_true', help='turn on live viewer')
+parser.add_argument('--render_every',  type=int, default=1, help='draw 1 in N steps')
 args = parser.parse_args()
 
-device, ENV_ID = torch.device("cuda" if torch.cuda.is_available() else "cpu"), "BipedalWalker-v3"
+device, ENV_ID = torch.device('cuda' if torch.cuda.is_available() else 'cpu'), 'BipedalWalker-v3'
 GAMMA, LAMBDA, ACTOR_LR, CRITIC_LR = 0.99, 0.95, 3e-4, 3e-4
 MAX_EPISODES, MAX_STEPS, HIDDEN_SIZES = 2000, 1600, (128, 64)
+
+def grad_or_zero(param):
+    """Return param.grad if it exists, else a zero tensor of the same shape/device."""
+    return param.grad if param.grad is not None else torch.zeros_like(param)
 
 class ActorCritic(nn.Module):
     def __init__(self, obs_dim, act_dim):
@@ -34,12 +38,13 @@ class ActorCritic(nn.Module):
         act = Normal(mu, std).sample()
         return act.cpu().numpy(), v.cpu().item()
 
-def update(trace, new_grad, γ, lam):          # eligibility-trace helper
+# eligibility-trace helper
+def update(trace, new_grad, γ, lam):
     return γ * lam * trace + new_grad
 
 # ------------------------------------------------------------------------------------
 def train():
-    render_mode = "human" if args.render else None
+    render_mode = 'human' if args.render else None
     env = gym.make(ENV_ID, render_mode=render_mode)
     obs_dim, act_dim = env.observation_space.shape[0], env.action_space.shape[0]
     net = ActorCritic(obs_dim, act_dim).to(device)
@@ -47,39 +52,42 @@ def train():
     actor_tr, critic_tr = [torch.zeros_like(p, device=device) for p in net.parameters()], \
                           [torch.zeros_like(p, device=device) for p in net.parameters()]
 
-    for ep in trange(MAX_EPISODES, desc="episodes"):
+    for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset(seed=None)
         ep_ret = 0.0
         actor_tr[:] = [t.zero_() for t in actor_tr]; critic_tr[:] = [t.zero_() for t in critic_tr]
 
         for t in range(MAX_STEPS):
-            if args.render and (t % args.render_every == 0): # draw only every N-th step
+            if args.render and (t % args.render_every == 0):
                 env.render()
 
             act, v = net.act(obs)
+            act = torch.clip(act, env.action_space.low, env.action_space.high)
             obs_next, r, term, trunc, _ = env.step(act)
             done = term or trunc
             with torch.no_grad():
                 _, _, v_next = net(torch.as_tensor(obs_next, dtype=torch.float32, device=device))
-                δ = r + GAMMA * (0.0 if done else v_next) - v         # TD-error
+                δ = r + GAMMA * (0.0 if done else v_next) - v  # TD-error
 
-            # -- critic --------------------------------------------------------
+            # critic
             critic_opt.zero_grad()
             _, _, v_pred = net(torch.as_tensor(obs, dtype=torch.float32, device=device))
             v_pred.backward()
             for p, z in zip(net.parameters(), critic_tr):
-                z.data = update(z.data, p.grad.data, GAMMA, LAMBDA)
-                p.grad.data = -δ * z.data
+                z.data = update(z.data, grad_or_zero(p), GAMMA, LAMBDA)
+                p.grad = -δ * z.data
+            torch.nn.utils.clip_grad_norm_(net.parameters(), 0.5)
             critic_opt.step()
 
-            # -- actor ---------------------------------------------------------
+            # actor
             actor_opt.zero_grad()
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device)
             mu, std, _ = net(obs_t); logp = Normal(mu, std).log_prob(torch.as_tensor(act, dtype=torch.float32, device=device)).sum()
             logp.backward()
             for p, z in zip(net.parameters(), actor_tr):
-                z.data = update(z.data, p.grad.data, GAMMA, LAMBDA)
-                p.grad.data = -δ * z.data           # ascent => minimise negative return
+                z.data = update(z.data, grad_or_zero(p), GAMMA, LAMBDA)
+                p.grad = -δ * z.data # ascent => minimise negative return
+            torch.nn.utils.clip_grad_norm_(net.parameters(), 0.5)
             actor_opt.step()
 
             ep_ret += r
@@ -87,9 +95,9 @@ def train():
             obs = obs_next
 
         if ep % 10 == 0:
-            print(f"Episode {ep:4d} | Return {ep_ret:7.1f}")
+            print(f'Episode {ep:4d} | Return {ep_ret:7.1f}')
 
     env.close()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     train()

@@ -166,8 +166,7 @@ def train():
             entropy = dist.base_dist.entropy().sum()
 
             # Policy gradient with advantage
-            exploration_bonus = 0.01 if ep < 100 else 0.0
-            actor_loss = -log_prob * (advantage.detach() + exploration_bonus) - ENTROPY_COEF * entropy
+            actor_loss = -log_prob * advantage.detach() - ENTROPY_COEF * entropy
             actor_loss.backward()
 
             # Apply eligibility traces for actor

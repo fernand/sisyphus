@@ -1,7 +1,7 @@
 import argparse
 import gymnasium as gym
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.sac import SAC          # SAC with automatic α
+from stable_baselines3.sac import SAC
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--render', action='store_true')
@@ -20,10 +20,9 @@ model = SAC(
     env,
     learning_rate=3e-4,
     buffer_size=1_000_000,  # big buffer even for one env
-    batch_size=256,
-    train_freq=(24, "step"),
-    gradient_steps=24,
-    target_update_interval=1,
+    batch_size=512,
+    train_freq=(1, "step"),
+    gradient_steps=1,
     policy_kwargs=dict(net_arch=[256, 256]),
     verbose=0,
 )

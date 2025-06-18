@@ -16,7 +16,8 @@ args = parser.parse_args()
 
 ENV_ID      = 'BipedalWalker-v3'
 GAMMA       = 0.99
-LAMBDA      = 0.95
+LAMBDA      = 0.9
+ENTROPY_COEF = 1e-3
 ACTOR_LR    = 3e-4
 CRITIC_LR   = 3e-4
 MAX_EPISODES = 5000
@@ -38,7 +39,7 @@ class ActorCritic(nn.Module):
         self.logstd_head = nn.Parameter(torch.zeros(act_dim))
         self.v_head      = nn.Linear(h2, 1)
         self.shared_params: list[nn.Parameter] = list(self.shared.parameters())
-        self.actor_params:  list[nn.Parameter] = self.shared_params + list(self.mu_head.parameters()) + [self.logstd_head]
+        self.actor_params:  list[nn.Parameter] = list(self.mu_head.parameters()) + [self.logstd_head]
         self.critic_params: list[nn.Parameter] = self.shared_params + list(self.v_head.parameters())
 
     def forward(self, x: torch.Tensor):
@@ -55,6 +56,18 @@ class ActorCritic(nn.Module):
         act = TanhNormal(mu, std).rsample()
         return act.numpy(), v.item()
 
+def init(net):
+    for m in net.modules():
+        if isinstance(m, nn.Linear):
+            gain = np.sqrt(2)
+            nn.init.orthogonal_(m.weight, gain)
+            nn.init.constant_(m.bias, 0.)
+    # small output layers
+    nn.init.orthogonal_(net.mu_head.weight, 1e-2)
+    nn.init.constant_(net.mu_head.bias, 0.)
+    nn.init.orthogonal_(net.v_head.weight, 1e-2)
+    nn.init.constant_(net.v_head.bias, 0.)
+
 class TanhNormal:
     def __init__(self, mu, std):
         self.normal = Normal(mu, std)
@@ -64,11 +77,11 @@ class TanhNormal:
         return torch.tanh(z)
 
     def log_prob(self, a):
-        # change–of–variables correction, numerically stable
-        eps = 1e-6
-        atanh_a = 0.5 * (torch.log1p(a + eps) - torch.log1p(-a + eps))
-        log_det = 2*(np.log(2) - atanh_a - torch.nn.functional.softplus(-2*atanh_a))
-        return self.normal.log_prob(atanh_a) - log_det
+        # clamp to keep |a|<1 and stay in float32
+        a = a.float().clamp_(-0.999, 0.999)
+        z = torch.atanh(a)
+        log_det = 2*(np.log(2) - z - torch.nn.functional.softplus(-2*z))
+        return self.normal.log_prob(z) - log_det
 
 class RunningNorm:
     def __init__(self, shape, eps=1e-4):
@@ -112,6 +125,7 @@ def train():
     act_dim = env.action_space.shape[0]
 
     net = ActorCritic(obs_dim, act_dim).to(DEVICE)
+    init(net)
 
     # Two optimisers, shared trunk only in critic optimiser
     actor_opt  = torch.optim.Adam(net.actor_params,  ACTOR_LR)
@@ -121,7 +135,6 @@ def train():
     critic_tr = [torch.zeros_like(p) for p in net.critic_params]
 
     obs_norm = RunningNorm(obs_dim)
-    obs_next_norm = RunningNorm(obs_dim)
 
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset()
@@ -129,7 +142,8 @@ def train():
         steps_survived = 0
 
         with torch.no_grad():
-            net.logstd_head.clamp_(np.log(0.05), np.log(1.5))
+            net.logstd_head.data.mul_(0.999) # exponential decay
+            net.logstd_head.data.clamp_(np.log(0.02), np.log(3.5))
 
         for z in actor_tr + critic_tr:
             z.zero_()
@@ -145,12 +159,12 @@ def train():
 
             # Cast scalars to tensors early
             r_t         = torch.as_tensor(r, dtype=torch.float32, device=DEVICE)
-            obs_t       = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE)
+            obs_t      = torch.as_tensor(obs , dtype=torch.float32, device=DEVICE)
             obs_norm.update(obs_t.unsqueeze(0))
-            obs_t = obs_norm(obs_t)
-            obs_next_t  = torch.as_tensor(obs_next, dtype=torch.float32, device=DEVICE)
-            obs_next_norm.update(obs_next_t.unsqueeze(0))
-            obs_next_t = obs_next_norm(obs_next_t)
+            obs_t      = obs_norm(obs_t)
+
+            obs_next_t = torch.as_tensor(obs_next, dtype=torch.float32, device=DEVICE)
+            obs_next_t = obs_norm(obs_next_t)          # ***no second RunningNorm***
 
             # Fresh value estimates
             with torch.no_grad():
@@ -161,11 +175,13 @@ def train():
             delta  = target - v_pred_t.detach()  # advantage, no grad
 
             # 1 Actor update (before critic)
-            actor_opt.zero_grad()
             mu, std, _ = net(obs_t)  # trunk unchanged so far
             dist = TanhNormal(mu, std)
-            logp = dist.log_prob(torch.from_numpy(act)).sum()
-            logp.backward() # ∇ log π
+            act_t = torch.as_tensor(act, dtype=torch.float32, device=DEVICE)
+            logp = dist.log_prob(act_t).sum()
+            entropy = dist.normal.entropy().sum()
+            actor_opt.zero_grad()
+            (-logp - ENTROPY_COEF * entropy).backward()   # NO δ here
             apply_traces(net.actor_params, actor_tr, scale=delta.detach())
             torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
             actor_opt.step()

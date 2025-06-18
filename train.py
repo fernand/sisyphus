@@ -203,7 +203,7 @@ def train():
             critic_opt.zero_grad()
             # Get value with current params (after actor update)
             _, _, v_pred = net(obs_t)  # Use full forward pass for consistency
-            v_pred.backward()
+            (-v_pred).backward()
             apply_traces(net.critic_params, critic_tr, scale=delta.detach())
             torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
             critic_opt.step()

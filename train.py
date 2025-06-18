@@ -171,12 +171,12 @@ def train():
 
             # Cast scalars to tensors early
             r_t = torch.as_tensor(r, dtype=torch.float32, device=DEVICE)
-            obs_t      = torch.as_tensor(obs , dtype=torch.float32, device=DEVICE)
+            obs_t  = torch.as_tensor(obs , dtype=torch.float32, device=DEVICE)
             obs_norm.update(obs_t.unsqueeze(0))
-            obs_t      = obs_norm(obs_t)
+            obs_t = obs_norm(obs_t)
 
             obs_next_t = torch.as_tensor(obs_next, dtype=torch.float32, device=DEVICE)
-            obs_next_t = obs_norm(obs_next_t)          # ***no second RunningNorm***
+            obs_next_t = obs_norm(obs_next_t)
 
             # Fresh value estimates
             with torch.no_grad():

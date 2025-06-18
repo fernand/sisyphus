@@ -21,7 +21,7 @@ ACTOR_LR = 1e-4
 CRITIC_LR = 3e-4
 MAX_EPISODES = 5000
 MAX_STEPS = 1600
-HIDDEN_SIZES = (128, 64)
+HIDDEN_SIZES = (256, 256)
 DEVICE = torch.device('cpu')
 
 def make_dist(mu, std):

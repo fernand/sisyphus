@@ -19,7 +19,7 @@ model = SAC(
     "MlpPolicy",
     env,
     learning_rate=3e-4,
-    buffer_size=1_000_000,  # big buffer even for one env
+    buffer_size=1_000_000,
     batch_size=512,
     train_freq=(1, "step"),
     gradient_steps=1,

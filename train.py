@@ -45,8 +45,8 @@ class ActorCritic(nn.Module):
         return act.numpy(), v.item()
 
 # eligibility-trace helper
-def update(trace, new_grad, γ, lam):
-    return γ * lam * trace + new_grad
+def update(trace, new_grad, gamma, lam):
+    return gamma * lam * trace + new_grad
 
 def train():
     render_mode = 'human' if args.render else None
@@ -77,21 +77,19 @@ def train():
                 _, _, v_next = net(obs_next_t)
                 δ = r + GAMMA * (0.0 if done else v_next) - v  # TD-error
 
-            # critic
+            # critic - use standard TD error for gradient
             critic_opt.zero_grad()
             obs_t = torch.as_tensor(obs, dtype=torch.float32)
             _, _, v_pred = net(obs_t)
-            # Compute TD target
-            with torch.no_grad():
-                target = r + GAMMA * (0.0 if done else v_next)
-            critic_loss = 0.5 * (v_pred - target)**2
+            critic_loss = 0.5 * (v_pred - (r + GAMMA * (0.0 if done else v_next)))**2
             critic_loss.backward(retain_graph=True)
 
-            # Update eligibility traces and accumulate gradients
+            # Update eligibility traces and scale gradients by TD error
             with torch.no_grad():
                 for p, z in zip(net.parameters(), critic_tr):
-                    z[:] = update(z, p.grad, GAMMA, LAMBDA)
-                    p.grad = δ * z
+                    if p.grad is not None:
+                        z[:] = update(z, p.grad, GAMMA, LAMBDA)
+                        p.grad = z.clone()
             torch.nn.utils.clip_grad_norm_(net.parameters(), 0.5)
             critic_opt.step()
 
@@ -103,11 +101,12 @@ def train():
             logp = dist.log_prob(act_t).sum()
             logp.backward()
 
-            # Update eligibility traces and accumulate gradients
+            # Update eligibility traces and scale by TD error
             with torch.no_grad():
                 for p, z in zip(net.parameters(), actor_tr):
-                    z[:] = update(z, p.grad, GAMMA, LAMBDA)
-                    p.grad = δ * z
+                    if p.grad is not None:
+                        z[:] = update(z, p.grad, GAMMA, LAMBDA)
+                        p.grad = δ * z
             torch.nn.utils.clip_grad_norm_(net.parameters(), 0.5)
             actor_opt.step()
 

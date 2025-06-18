@@ -6,8 +6,8 @@ import torch.nn as nn
 from torch.distributions import Normal
 from tqdm import trange
 
-torch.set_num_threads(8)
-torch.set_num_interop_threads(8)
+torch.set_num_threads(4)
+torch.set_num_interop_threads(4)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--render', action='store_true', help='turn on live viewer')
@@ -17,9 +17,9 @@ args = parser.parse_args()
 ENV_ID      = 'BipedalWalker-v3'
 GAMMA       = 0.99
 LAMBDA      = 0.95
-ACTOR_LR    = 1e-4
-CRITIC_LR   = 1e-4
-MAX_EPISODES = 2000
+ACTOR_LR    = 3e-4
+CRITIC_LR   = 3e-4
+MAX_EPISODES = 5000
 MAX_STEPS    = 1600
 HIDDEN_SIZES = (128, 64)
 DEVICE       = torch.device('cpu')
@@ -88,14 +88,14 @@ def train():
         obs, _ = env.reset()
         ep_ret = 0.0
         steps_survived = 0
-        
-        # Exploration decay: start at 1.0, decay to 0.1 over first 1000 episodes
-        std_scale = max(0.1, 1.0 - ep / 1000.0)
+
+        # Exploration decay: start at 1.0, decay to 0.1 over MAX_STEPS
+        std_scale = max(0.1, 1.0 - ep / MAX_STEPS)
         with torch.no_grad():
             net.logstd_head.data.fill_(np.log(std_scale))
-        
-        # for z in actor_tr + critic_tr:
-        #     z.zero_()
+
+        for z in actor_tr + critic_tr:
+            z.zero_()
 
         for t in range(MAX_STEPS):
             if args.render and (t % args.render_every == 0):

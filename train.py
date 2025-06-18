@@ -139,22 +139,23 @@ def train():
             mu, std, v = net(obs_t)
             with torch.no_grad():
                 _, _, v_next = net(obs_next_t)
-                v_target = r + GAMMA * (1.0 - float(done)) * v_next
-                advantage = (v_target.detach() - v).detach()
+                delta = (r + GAMMA * (1.0 - float(done)) * v_next) - v
 
             # Update critic
             critic_opt.zero_grad()
-            critic_loss = 0.5 * (v - v_target.detach())**2
-            critic_loss.backward()
+            v.backward()
 
             # Apply eligibility traces for critic
             with torch.no_grad():
                 for p, trace in zip(net.critic_params, critic_traces):
                     if p.grad is not None:
-                        trace.mul_(GAMMA * LAMBDA).add_(p.grad)
-                        p.grad.copy_(trace)
+                        trace.mul_(GAMMA * LAMBDA).add_(p.grad)   # e^v_t
+                        p.grad.copy_(-delta * trace)              # −δ e  (SGD does θ ← θ − η ∇J)
 
             torch.nn.utils.clip_grad_norm_(net.critic_params, 0.5)
+            with torch.no_grad(): # Keep traces bounded
+                for p, trace in zip(net.critic_params, critic_traces):
+                    trace.copy_(p.grad)
             critic_opt.step()
 
             # Update actor
@@ -164,21 +165,20 @@ def train():
             log_prob = dist.log_prob(torch.clamp(act_t, -0.999, 0.999)).sum()
             entropy = dist.base_dist.entropy().sum()
 
-            # Policy gradient with advantage
-            actor_loss = -log_prob * advantage.detach() - ENTROPY_COEF * entropy
-            actor_loss.backward()
+            log_prob.backward(retain_graph=True)       # ∇ log π_t  → traces
+            (-ENTROPY_COEF * entropy).backward()       # −β ∇H      → p.grad (accumulates)
 
             # Apply eligibility traces for actor
             with torch.no_grad():
                 for p, trace in zip(net.actor_params, actor_traces):
                     if p.grad is not None:
-                        trace.mul_(GAMMA * LAMBDA).add_(p.grad)
-                        p.grad.copy_(trace)
+                        trace.mul_(GAMMA * LAMBDA).add_(p.grad)   # e^π_t
+                        p.grad.copy_(-delta * trace)              # −δ e
 
             torch.nn.utils.clip_grad_norm_(net.actor_params, 0.5)
-            with torch.no_grad():
+            with torch.no_grad(): # keep traces bounded
                 for p, trace in zip(net.actor_params, actor_traces):
-                    trace.copy_(p.grad)         # keep trace bounded
+                    trace.copy_(p.grad)
             actor_opt.step()
 
             ep_ret += r

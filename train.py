@@ -16,13 +16,13 @@ args = parser.parse_args()
 
 ENV_ID = 'BipedalWalker-v3'
 GAMMA = 0.99
-LAMBDA = 0.95
+LAMBDA = 0.9
 ENTROPY_COEF = 0.01
 ACTOR_LR = 1e-4
 CRITIC_LR = 1e-4
 MAX_EPISODES = 5000
 MAX_STEPS = 1600
-HIDDEN_SIZES = (128, 128)
+HIDDEN_SIZES = (128, 64)
 DEVICE = torch.device('cpu')
 
 def make_dist(mu, std):
@@ -108,9 +108,9 @@ def train():
         # Adaptive learning rate decay
         if ep % 100 == 0 and ep > 0:
             for param_group in actor_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.95, 1e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
             for param_group in critic_opt.param_groups:
-                param_group['lr'] = max(param_group['lr'] * 0.95, 1e-5)
+                param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)
 
         # Adaptive exploration
         with torch.no_grad():

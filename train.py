@@ -17,13 +17,29 @@ args = parser.parse_args()
 ENV_ID      = 'BipedalWalker-v3'
 GAMMA       = 0.99
 LAMBDA      = 0.9
-ENTROPY_COEF = 1e-3
+ENTROPY_COEF = 0.02
 ACTOR_LR    = 1e-4
 CRITIC_LR   = 3e-4
 MAX_EPISODES = 5000
 MAX_STEPS    = 1600
 HIDDEN_SIZES = (128, 64)
 DEVICE       = torch.device('cpu')
+
+class RunningStats:
+    def __init__(self, eps=1e-8):
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = eps
+
+    def update_single(self, x):
+        """Update with a single value"""
+        self.count += 1
+        delta = x - self.mean
+        self.mean += delta / self.count
+        self.var += delta * (x - self.mean - self.var) / self.count
+
+    def normalize(self, x):
+        return (x - self.mean) / np.sqrt(self.var + 1e-8)
 
 class ActorCritic(nn.Module):
     """Shared torso, Gaussian actor, scalar critic."""
@@ -135,6 +151,7 @@ def train():
     critic_tr = [torch.zeros_like(p) for p in net.critic_params]
 
     obs_norm = RunningNorm(obs_dim)
+    reward_stats = RunningStats()
 
     for ep in trange(MAX_EPISODES, desc='episodes'):
         obs, _ = env.reset()
@@ -157,8 +174,14 @@ def train():
             obs_next, r, term, trunc, _ = env.step(act)
             done = term or trunc
 
+            # Update stats with this single reward
+            reward_stats.update_single(r)
+
+            # Normalize the reward for use in TD update
+            r_normalized = reward_stats.normalize(r)
+
             # Cast scalars to tensors early
-            r_t         = torch.as_tensor(r, dtype=torch.float32, device=DEVICE)
+            r_t = torch.as_tensor(r_normalized, dtype=torch.float32, device=DEVICE)
             obs_t      = torch.as_tensor(obs , dtype=torch.float32, device=DEVICE)
             obs_norm.update(obs_t.unsqueeze(0))
             obs_t      = obs_norm(obs_t)

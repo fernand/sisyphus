@@ -21,8 +21,8 @@ model = SAC(
     learning_rate=3e-4,
     buffer_size=1_000_000,
     batch_size=512,
-    train_freq=(1, "step"),
-    gradient_steps=1,
+    train_freq=(24, "step"),
+    gradient_steps=24,
     policy_kwargs=dict(net_arch=[256, 256]),
     verbose=0,
 )
@@ -30,15 +30,22 @@ model = SAC(
 class TqdmCallback(BaseCallback):
     def _on_training_start(self):
         self.ep = 0
+        self.recent = []
 
     def _on_step(self):
         if self.locals["dones"][0]:
             self.ep += 1
             ep_ret = self.locals["infos"][0]["episode"]["r"]
+            self.recent.append(ep_ret)
+            if len(self.recent) > 10:
+                self.recent.pop(0)
+
             if self.ep % 10 == 0:
-                buf_size = self.model.replay_buffer.size()   # ← change here
-                print(f"Episode {self.ep:4d} | Return {ep_ret:7.1f} | "
-                      f"Buffer {buf_size:,}")
+                buf_size = self.model.replay_buffer.size()
+                avg_ret = sum(self.recent) / len(self.recent)
+                print(f"Episode {self.ep:4d} | Return {ep_ret:7.1f} "
+                      f"| Avg {avg_ret:7.1f} | Buffer {buf_size:,}")
+
             if self.ep >= args.episodes:
                 return False
         return True

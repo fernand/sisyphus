@@ -158,6 +158,12 @@ def train():
         ep_ret = 0.0
         steps_survived = 0
 
+        if ep % 50 == 0:
+            for param_group in actor_opt.param_groups:
+                param_group['lr'] *= 0.99
+            for param_group in critic_opt.param_groups:
+                param_group['lr'] *= 0.99
+
         with torch.no_grad():
             net.logstd_head.data.mul_(0.999) # exponential decay
             net.logstd_head.data.clamp_(np.log(0.02), np.log(3.5))
@@ -226,7 +232,7 @@ def train():
             obs = obs_next
 
         if ep % 10 == 0:
-            print(f'Episode {ep:4d} | Return {ep_ret:7.1f} | Steps {steps_survived:4d} | σ {net.logstd_head.exp().mean():.3f}')
+            print(f'Episode {ep:4d} | Return {ep_ret:7.1f} | Steps {steps_survived:4d} | σ {net.logstd_head.exp().mean():.3f} | LR {actor_opt.param_groups[0]['lr']:.4f}')
 
     env.close()
 

@@ -105,7 +105,6 @@ def train():
         ep_ret = 0.0
         steps_survived = 0
 
-        # Adaptive learning rate decay
         if ep % 100 == 0 and ep > 0:
             for param_group in actor_opt.param_groups:
                 param_group['lr'] = max(param_group['lr'] * 0.98, 1e-5)

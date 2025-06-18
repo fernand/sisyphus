@@ -21,8 +21,8 @@ model = SAC(
     learning_rate=3e-4,
     buffer_size=1_000_000,
     batch_size=512,
-    train_freq=(24, "step"),
-    gradient_steps=24,
+    train_freq=(1, "step"),
+    gradient_steps=1,
     policy_kwargs=dict(net_arch=[256, 256]),
     verbose=0,
 )

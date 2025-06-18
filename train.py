@@ -108,7 +108,6 @@ def train():
             # Normalize observations to [-1, 1]
             obs_t = (torch.as_tensor(obs, dtype=torch.float32, device=DEVICE) - obs_mean) / obs_scale
 
-            # Action selection
             act, _ = net.act(obs_t)
             obs_next, r, term, trunc, _ = env.step(act.cpu().numpy())
             done = term or trunc
